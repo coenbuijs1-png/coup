@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"from PIL import Image; print\\('PIL OK'\\)\")",
+      "Bash(python -c \"from PIL import Image; img = Image.open\\('cards-source.png.webp'\\); print\\(img.size, img.mode\\)\")"
+    ]
+  }
+}
