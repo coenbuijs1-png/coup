@@ -228,6 +228,17 @@ button.ghost.small { padding: 4px 10px; font-size: 12px; }
   font-style: italic;
 }
 
+.warn {
+  margin-top: 8px !important;
+  color: #d4a93a !important;
+  font-size: 11px !important;
+  background: rgba(212, 169, 58, 0.08);
+  padding: 6px 10px;
+  border-radius: 5px;
+  border-left: 2px solid #d4a93a;
+  text-align: left;
+}
+
 .status-line {
   margin: 10px 0 0;
   font-size: 13px;

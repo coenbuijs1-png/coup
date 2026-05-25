@@ -27,29 +27,53 @@ const Net = (function () {
 
   function init() {
     return new Promise((resolve, reject) => {
-      // Use a short readable ID by combining 3 words; PeerJS would give us a random one,
-      // but we'll generate our own friendlier code.
+      let settled = false;
+      // Use a short readable ID; if it's already taken on the broker, retry with random.
       const code = generateRoomCode();
-      peer = new Peer(code, {
-        // Use PeerJS' default public broker (peerjs.com); fine for two players.
-        debug: 1,
-      });
+      peer = new Peer(code, { debug: 1 });
+      const openTimer = setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          reject(new Error("Couldn't reach the PeerJS signaling server. Check your internet and try again."));
+        }
+      }, 12000);
+
       peer.on('open', (id) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(openTimer);
         emit('open', id);
         resolve(id);
       });
       peer.on('error', (err) => {
-        // If ID was taken, try a fresh random one
+        // ID collision — retry once with a random ID.
         if (err && err.type === 'unavailable-id') {
           peer.destroy();
           peer = new Peer(undefined, { debug: 1 });
-          peer.on('open', (id) => { emit('open', id); resolve(id); });
-          peer.on('error', (e) => { emit('error', e); reject(e); });
+          peer.on('open', (id) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(openTimer);
+            emit('open', id);
+            resolve(id);
+          });
+          peer.on('error', (e) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(openTimer);
+            emit('error', e);
+            reject(e);
+          });
           peer.on('connection', _setupIncoming);
           return;
         }
         emit('error', err);
-        // Don't reject here if already open — peer.js fires errors during normal life.
+        // Fatal init errors before open: reject so caller can show a message.
+        if (!settled && (err.type === 'network' || err.type === 'server-error' || err.type === 'browser-incompatible' || err.type === 'ssl-unavailable' || err.type === 'socket-error' || err.type === 'socket-closed')) {
+          settled = true;
+          clearTimeout(openTimer);
+          reject(new Error(`Network error (${err.type}). Reload the page and try again.`));
+        }
       });
       peer.on('connection', _setupIncoming);
     });
@@ -89,28 +113,35 @@ const Net = (function () {
   function joinRoom(remoteId) {
     isHost = false;
     return new Promise((resolve, reject) => {
+      let resolved = false;
+      const finish = (err, ok) => {
+        if (resolved) return;
+        resolved = true;
+        clearTimeout(timer);
+        peer.off?.('error', onPeerErr);
+        if (ok) resolve(); else reject(err);
+      };
+      // Listen for "peer-unavailable" on the peer object — fires when the host
+      // never registered that ID or has since disconnected.
+      const onPeerErr = (err) => {
+        if (err && err.type === 'peer-unavailable') {
+          finish(new Error(`No active host found for "${remoteId}". The host's tab must be open. Ask them to click "Create room" again and share the new code.`));
+        }
+      };
+      peer.on('error', onPeerErr);
+
       const c = peer.connect(remoteId, { reliable: true });
       conn = c;
-      let resolved = false;
       const timer = setTimeout(() => {
-        if (!resolved) {
-          resolved = true;
-          reject(new Error('Connection timed out. Check the room code.'));
-        }
-      }, 15000);
+        finish(new Error(`Couldn't reach the host. Make sure their tab is open on "Create room" with the code "${remoteId}" showing, then try again.`));
+      }, 8000);
       c.on('open', () => {
-        if (resolved) return;
-        resolved = true;
-        clearTimeout(timer);
         _wireConn(c);
         emit('connected', isHost);
-        resolve();
+        finish(null, true);
       });
       c.on('error', (err) => {
-        if (resolved) return;
-        resolved = true;
-        clearTimeout(timer);
-        reject(err);
+        finish(err, false);
       });
     });
   }

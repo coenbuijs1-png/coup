@@ -37,9 +37,8 @@ const App = {
     Net.on('disconnected', () => UI.toast('Opponent disconnected.', 'danger'));
     Net.on('error',        (err) => {
       console.warn('Net error:', err);
-      if (err && err.type === 'peer-unavailable') {
-        UI.setJoinStatus('Room not found.', 'error');
-      }
+      // Note: don't show user-facing errors here — joinRoom()/createRoom() will
+      // reject with a proper message that's caught in their catch blocks.
     });
   },
 
