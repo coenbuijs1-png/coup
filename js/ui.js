@@ -493,10 +493,26 @@ const UI = (function () {
     return JSON.parse(JSON.stringify(o));
   }
 
+  function setNetStatus(text) {
+    // Show network status either under join code or the waiting message.
+    const waiting = refs['waiting-msg'];
+    if (waiting && !refs['create-status'].classList.contains('hidden')) {
+      waiting.textContent = text;
+    }
+    const joinStatus = refs['join-status'];
+    if (joinStatus && refs['lobby'].classList.contains('visible')) {
+      const inJoinTab = document.querySelector('#tab-join.active') !== null;
+      if (inJoinTab) {
+        joinStatus.textContent = text;
+        joinStatus.className = 'status-line info';
+      }
+    }
+  }
+
   return {
     init, on,
     showLobby, showGame,
-    showRoomCode, setJoinStatus,
+    showRoomCode, setJoinStatus, setNetStatus,
     render,
     showGameover, hideGameover,
     toast,

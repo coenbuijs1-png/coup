@@ -1,163 +1,166 @@
 /* ============================================================
-   COUP — Networking (PeerJS over WebRTC)
+   COUP — Networking via Trystero (WebRTC over BT-tracker signaling)
+   Replaces the older PeerJS-based version. Signaling now goes
+   through multiple public BitTorrent trackers, so it doesn't
+   depend on any single broker.
    ============================================================ */
 
 const Net = (function () {
-  let peer = null;
-  let conn = null;
+  let trystero = null;
+  let room = null;
+  let sendMsg = null;
   let isHost = false;
+  let myRoomId = null;          // either generated (host) or supplied (guest)
+  let oppPeerId = null;
+  let connected = false;
 
   const handlers = {
-    open: [],
-    connected: [],
-    message: [],
-    disconnected: [],
-    error: [],
+    open: [], connected: [], message: [], disconnected: [], error: [], status: [],
   };
 
   function on(event, fn) {
-    if (handlers[event]) handlers[event].push(fn);
+    (handlers[event] = handlers[event] || []).push(fn);
   }
-
   function emit(event, ...args) {
     (handlers[event] || []).forEach(fn => {
       try { fn(...args); } catch (e) { console.error(e); }
     });
   }
 
-  function init() {
-    return new Promise((resolve, reject) => {
-      let settled = false;
-      // Use a short readable ID; if it's already taken on the broker, retry with random.
-      const code = generateRoomCode();
-      peer = new Peer(code, { debug: 1 });
-      const openTimer = setTimeout(() => {
-        if (!settled) {
-          settled = true;
-          reject(new Error("Couldn't reach the PeerJS signaling server. Check your internet and try again."));
+  // -------- Load Trystero (ESM via esm.sh) --------
+  let trysteroPromise = null;
+  function loadTrystero() {
+    if (trysteroPromise) return trysteroPromise;
+    emit('status', 'Loading network…');
+    trysteroPromise = (async () => {
+      // Primary: esm.sh.  Secondary fallback: jsdelivr esm bundle.
+      const sources = [
+        'https://esm.sh/trystero@0.21.4/torrent',
+        'https://cdn.jsdelivr.net/npm/trystero@0.21.4/+esm',
+      ];
+      let lastErr = null;
+      for (const src of sources) {
+        try {
+          const mod = await import(/* @vite-ignore */ src);
+          if (mod && typeof mod.joinRoom === 'function') {
+            trystero = mod;
+            return mod;
+          }
+        } catch (e) {
+          lastErr = e;
         }
-      }, 12000);
-
-      peer.on('open', (id) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(openTimer);
-        emit('open', id);
-        resolve(id);
-      });
-      peer.on('error', (err) => {
-        // ID collision — retry once with a random ID.
-        if (err && err.type === 'unavailable-id') {
-          peer.destroy();
-          peer = new Peer(undefined, { debug: 1 });
-          peer.on('open', (id) => {
-            if (settled) return;
-            settled = true;
-            clearTimeout(openTimer);
-            emit('open', id);
-            resolve(id);
-          });
-          peer.on('error', (e) => {
-            if (settled) return;
-            settled = true;
-            clearTimeout(openTimer);
-            emit('error', e);
-            reject(e);
-          });
-          peer.on('connection', _setupIncoming);
-          return;
-        }
-        emit('error', err);
-        // Fatal init errors before open: reject so caller can show a message.
-        if (!settled && (err.type === 'network' || err.type === 'server-error' || err.type === 'browser-incompatible' || err.type === 'ssl-unavailable' || err.type === 'socket-error' || err.type === 'socket-closed')) {
-          settled = true;
-          clearTimeout(openTimer);
-          reject(new Error(`Network error (${err.type}). Reload the page and try again.`));
-        }
-      });
-      peer.on('connection', _setupIncoming);
-    });
+      }
+      throw new Error('Could not load network library: ' + (lastErr?.message || 'unknown'));
+    })();
+    return trysteroPromise;
   }
 
-  function _setupIncoming(c) {
-    if (!isHost) return;          // only host accepts inbound
-    if (conn && conn.open) {       // already have an opponent
-      c.close();
-      return;
+  // -------- API matching the previous PeerJS shape --------
+
+  async function init() {
+    try {
+      await loadTrystero();
+    } catch (e) {
+      emit('error', e);
+      throw e;
     }
-    conn = c;
-    _wireConn(conn);
+    if (!myRoomId) myRoomId = generateRoomCode();
+    emit('open', myRoomId);
+    return myRoomId;
   }
 
-  function _wireConn(c) {
-    c.on('open', () => {
-      emit('connected', isHost);
-    });
-    c.on('data', (data) => {
-      emit('message', data);
-    });
-    c.on('close', () => {
-      emit('disconnected');
-    });
-    c.on('error', (err) => {
-      emit('error', err);
-    });
-  }
-
-  function hostRoom() {
+  async function hostRoom() {
     isHost = true;
-    // Already initialized via init(); just wait for a peer to connect.
-    return peer.id;
+    emit('status', 'Opening room. Tell your opponent to join with this code.');
+    _setupRoom(myRoomId);
+    return myRoomId;
   }
 
-  function joinRoom(remoteId) {
+  async function joinRoom(roomId) {
     isHost = false;
+    myRoomId = (roomId || '').trim();
+    if (!myRoomId) throw new Error('Enter a room code first.');
+    if (!trystero) await loadTrystero();
+    emit('status', 'Looking for host (this can take up to 30 seconds)…');
     return new Promise((resolve, reject) => {
       let resolved = false;
-      const finish = (err, ok) => {
+      const finish = (err) => {
         if (resolved) return;
         resolved = true;
         clearTimeout(timer);
-        peer.off?.('error', onPeerErr);
-        if (ok) resolve(); else reject(err);
-      };
-      // Listen for "peer-unavailable" on the peer object — fires when the host
-      // never registered that ID or has since disconnected.
-      const onPeerErr = (err) => {
-        if (err && err.type === 'peer-unavailable') {
-          finish(new Error(`No active host found for "${remoteId}". The host's tab must be open. Ask them to click "Create room" again and share the new code.`));
+        if (err) {
+          try { room?.leave(); } catch (_) {}
+          room = null;
+          reject(err);
+        } else {
+          resolve();
         }
       };
-      peer.on('error', onPeerErr);
-
-      const c = peer.connect(remoteId, { reliable: true });
-      conn = c;
       const timer = setTimeout(() => {
-        finish(new Error(`Couldn't reach the host. Make sure their tab is open on "Create room" with the code "${remoteId}" showing, then try again.`));
-      }, 8000);
-      c.on('open', () => {
-        _wireConn(c);
-        emit('connected', isHost);
-        finish(null, true);
-      });
-      c.on('error', (err) => {
-        finish(err, false);
-      });
+        finish(new Error(
+          `Couldn't find the host within 30 seconds.\n\n` +
+          `Things to check:\n` +
+          `1. The other player has the page open and clicked "Create room".\n` +
+          `2. The code "${myRoomId}" is shown on their screen right now.\n` +
+          `3. You both have a working internet connection.`
+        ));
+      }, 30000);
+      // One-shot connection waiter.
+      const onceConnected = () => finish(null);
+      handlers.connected.push(onceConnected);
+      _setupRoom(myRoomId);
+    });
+  }
+
+  function _setupRoom(code) {
+    if (room) {
+      try { room.leave(); } catch (_) {}
+      room = null;
+    }
+    const config = {
+      appId: 'coup-coen-buijs-2026-v1',
+      rtcConfig: {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' },
+          { urls: 'stun:stun3.l.google.com:19302' },
+          { urls: 'stun:stun4.l.google.com:19302' },
+          { urls: 'stun:stun.cloudflare.com:3478' },
+        ],
+      },
+    };
+    room = trystero.joinRoom(config, code);
+    const [s, g] = room.makeAction('msg');
+    sendMsg = s;
+    g((data /*, peerId */) => emit('message', data));
+    room.onPeerJoin((peerId) => {
+      oppPeerId = peerId;
+      connected = true;
+      emit('status', 'Connected!');
+      emit('connected', isHost);
+    });
+    room.onPeerLeave((peerId) => {
+      if (peerId === oppPeerId) {
+        connected = false;
+        emit('disconnected');
+      }
     });
   }
 
   function send(msg) {
-    if (conn && conn.open) {
-      conn.send(msg);
+    try {
+      if (sendMsg) sendMsg(msg);
+    } catch (e) {
+      console.warn('send failed', e);
     }
   }
 
   function getRole() { return isHost ? 'host' : 'guest'; }
 
-  // Random 3-word style room code; falls back to alphanumeric.
   function generateRoomCode() {
-    const adj = ['red','blue','gold','dark','wild','swift','calm','keen','vast','bold'];
-    const noun = ['fox','wolf','duke','lion','crow','sage','tide','moon','rook','spire'];
+    const adj  = ['red','blue','gold','dark','wild','swift','calm','keen','vast','bold','quiet','silver','royal','iron','jade'];
+    const noun = ['fox','wolf','duke','lion','crow','sage','tide','moon','rook','spire','raven','star','vault','blade','torch'];
     const a = adj[Math.floor(Math.random() * adj.length)];
     const n = noun[Math.floor(Math.random() * noun.length)];
     const num = Math.floor(Math.random() * 900) + 100;

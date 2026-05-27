@@ -27,7 +27,6 @@ const App = {
 
     Net.on('connected', () => {
       UI.toast('Connected!', 'success');
-      // Both sides send a hello so the other side learns our name.
       if (!App.helloSent) {
         Net.send({ type: 'hello', name: App.myName });
         App.helloSent = true;
@@ -35,11 +34,8 @@ const App = {
     });
     Net.on('message',      (msg) => App.onMessage(msg));
     Net.on('disconnected', () => UI.toast('Opponent disconnected.', 'danger'));
-    Net.on('error',        (err) => {
-      console.warn('Net error:', err);
-      // Note: don't show user-facing errors here — joinRoom()/createRoom() will
-      // reject with a proper message that's caught in their catch blocks.
-    });
+    Net.on('error',        (err) => { console.warn('Net error:', err); });
+    Net.on('status',       (text) => UI.setNetStatus?.(text));
   },
 
   async createRoom(name) {
