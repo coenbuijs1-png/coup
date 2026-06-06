@@ -9,6 +9,7 @@ const App = {
   oppName: '',
   gameCount: 0,
   helloSent: false,
+  gameStarted: false,
 
   init() {
     UI.init();
@@ -27,13 +28,28 @@ const App = {
 
     Net.on('connected', () => {
       UI.toast('Connected!', 'success');
+      UI.setConnState?.('ok');
       if (!App.helloSent) {
         Net.send({ type: 'hello', name: App.myName });
         App.helloSent = true;
       }
     });
+    Net.on('reconnected', () => {
+      UI.toast('Reconnected!', 'success');
+      UI.setConnState?.('ok');
+      // Re-handshake so names + authoritative state are restored without
+      // restarting the game.
+      Net.send({ type: 'hello', name: App.myName });
+      if (Net.getRole() === 'host' && App.gameStarted) App.broadcast();
+    });
     Net.on('message',      (msg) => App.onMessage(msg));
-    Net.on('disconnected', () => UI.toast('Opponent disconnected.', 'danger'));
+    Net.on('disconnected', () => {
+      UI.setConnState?.('warn');
+    });
+    Net.on('giveup', () => {
+      UI.setConnState?.('bad');
+      UI.toast('Lost connection. Refresh to rejoin the same room.', 'danger');
+    });
     Net.on('error',        (err) => { console.warn('Net error:', err); });
     Net.on('status',       (text) => UI.setNetStatus?.(text));
   },
@@ -69,7 +85,13 @@ const App = {
       case 'hello':
         App.oppName = msg.name || 'Opponent';
         if (Net.getRole() === 'host') {
-          App.startGame();
+          if (App.gameStarted) {
+            // Reconnection: don't restart — just resync the authoritative state.
+            App.broadcast();
+            UI.render(Game.getViewFor(App.state, App.myIdx), App.myIdx);
+          } else {
+            App.startGame();
+          }
         }
         break;
       case 'state':
@@ -97,6 +119,7 @@ const App = {
     names[1 - App.myIdx] = App.oppName;
     const startingPlayer = App.gameCount % 2;
     App.gameCount += 1;
+    App.gameStarted = true;
     App.state = Game.createInitialState(names, startingPlayer);
     App.broadcast();
     UI.render(Game.getViewFor(App.state, App.myIdx), App.myIdx);

@@ -493,6 +493,18 @@ const UI = (function () {
     return JSON.parse(JSON.stringify(o));
   }
 
+  function setConnState(state) {
+    // state: 'ok' | 'warn' | 'bad'
+    const pill = document.getElementById('conn-pill');
+    const txt = document.getElementById('conn-text');
+    if (!pill || !txt) return;
+    pill.classList.remove('ok', 'warn', 'bad');
+    pill.classList.add(state);
+    txt.textContent = state === 'ok' ? 'Connected'
+      : state === 'warn' ? 'Reconnecting…'
+      : 'Disconnected';
+  }
+
   function setNetStatus(text) {
     // Show network status either under join code or the waiting message.
     const waiting = refs['waiting-msg'];
@@ -512,7 +524,7 @@ const UI = (function () {
   return {
     init, on,
     showLobby, showGame,
-    showRoomCode, setJoinStatus, setNetStatus,
+    showRoomCode, setJoinStatus, setNetStatus, setConnState,
     render,
     showGameover, hideGameover,
     toast,

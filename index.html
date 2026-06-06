@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>Coup</title>
-  <link rel="stylesheet" href="styles.css?v=6" />
+  <link rel="stylesheet" href="styles.css?v=7" />
 </head>
 <body>
 
@@ -13,7 +13,7 @@
     <div class="lobby-card">
       <h1 class="title">COUP</h1>
       <p class="subtitle">A game of deception</p>
-      <p class="build-version" id="build-version">Build v6 / checking network...</p>
+      <p class="build-version" id="build-version">Build v7 / checking network...</p>
 
       <div class="lobby-form">
         <label class="field">
@@ -52,6 +52,9 @@
 
   <!-- ==================== GAME ==================== -->
   <section id="game" class="screen">
+
+    <!-- Connection status indicator -->
+    <div id="conn-pill" class="conn-pill ok" title="Connection status"><span class="dot">●</span><span id="conn-text">Connected</span></div>
 
     <!-- Opponent panel -->
     <div class="player-panel opponent" id="opponent-panel">
@@ -116,17 +119,17 @@
   </div>
 
   <!-- Networking: PeerJS (loaded dynamically inside net.js) -->
-  <script src="js/cards.js?v=6"></script>
-  <script src="js/game.js?v=6"></script>
-  <script src="js/net.js?v=6"></script>
-  <script src="js/ui.js?v=6"></script>
-  <script src="js/main.js?v=6"></script>
+  <script src="js/cards.js?v=7"></script>
+  <script src="js/game.js?v=7"></script>
+  <script src="js/net.js?v=7"></script>
+  <script src="js/ui.js?v=7"></script>
+  <script src="js/main.js?v=7"></script>
   <script>
     document.addEventListener('DOMContentLoaded', () => {
       const el = document.getElementById('build-version');
       if (!el) return;
       const netVersion = (typeof Net !== 'undefined' && (Net.VERSION || Net.version)) ? (Net.VERSION || Net.version) : 'network unknown';
-      el.textContent = 'Build v6 / ' + netVersion;
+      el.textContent = 'Build v7 / ' + netVersion;
     });
   </script>
 </body>

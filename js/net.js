@@ -14,7 +14,7 @@
    ============================================================ */
 
 const Net = (function () {
-  const VERSION = 'net-peerjs-clean-v6';
+  const VERSION = 'net-peerjs-reconnect-v7';
 
   const PEERJS_CDN = [
     'https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js',
@@ -37,9 +37,12 @@ const Net = (function () {
   let isHost = false;
   let roomId = null;
   let connected = false;
+  let everConnected = false;
+  let reconnecting = false;
+  let teardown = false;
 
   const handlers = {
-    open: [], connected: [], message: [], disconnected: [], error: [], status: [],
+    open: [], connected: [], reconnected: [], message: [], disconnected: [], giveup: [], error: [], status: [],
   };
 
   function on(event, fn) { (handlers[event] = handlers[event] || []).push(fn); }
@@ -135,9 +138,11 @@ const Net = (function () {
       }
     }
 
-    // Keep the broker connection alive; reconnect if it drops while waiting.
+    // Keep the broker connection alive at all times so the guest can always
+    // (re)find us. PeerJS drops the broker socket periodically.
     peer.on('disconnected', () => {
-      if (!connected) { status('Reconnecting to signaling…'); try { peer.reconnect(); } catch (_) {} }
+      if (teardown) return;
+      try { peer.reconnect(); } catch (_) {}
     });
 
     peer.on('connection', (c) => {
@@ -206,16 +211,71 @@ const Net = (function () {
     const markConnected = () => {
       if (connected) return;
       connected = true;
+      reconnecting = false;
+      const wasReconnect = everConnected;
+      everConnected = true;
       status('Connected!');
-      emit('connected', isHost);
+      emit(wasReconnect ? 'reconnected' : 'connected', isHost);
       monitorIce(c);
     };
     if (c.open) markConnected();
     c.on('open', markConnected);
     c.on('data', (data) => emit('message', data));
-    c.on('close', () => { connected = false; emit('disconnected'); });
+    c.on('close', () => {
+      if (conn !== c) return;        // a newer connection already replaced this one
+      connected = false;
+      emit('disconnected');
+      if (!teardown) startReconnect();
+    });
     c.on('error', (err) => emit('error', err));
   }
+
+  // ---------- Reconnection ----------
+  // Host: keep the broker alive and simply wait — the guest re-dials the same
+  // room code and peer.on('connection') accepts it. Guest: actively re-dial.
+  function startReconnect() {
+    if (reconnecting || connected || teardown) return;
+    reconnecting = true;
+    status('Connection lost — reconnecting…');
+    if (isHost) {
+      // Make sure our broker socket is alive so the guest can reach us.
+      try { if (peer && peer.disconnected) peer.reconnect(); } catch (_) {}
+      reconnecting = false; // host is passive; new inbound connection clears state
+      return;
+    }
+    reconnectGuestLoop();
+  }
+
+  async function reconnectGuestLoop() {
+    const maxAttempts = 15;
+    for (let attempt = 1; attempt <= maxAttempts && !connected && !teardown; attempt++) {
+      status(`Reconnecting… (attempt ${attempt})`);
+      try {
+        if (!peer || peer.destroyed) {
+          peer = newPeer(undefined);
+          await waitForPeerOpen(peer, 'Reconnect', 8000);
+        } else if (peer.disconnected) {
+          try { peer.reconnect(); } catch (_) {}
+          await sleep(1200);
+        }
+        const c = peer.connect(roomId, { reliable: true });
+        const ok = await new Promise((resolve) => {
+          const to = setTimeout(() => resolve(false), 5000);
+          c.on('open', () => { clearTimeout(to); wireConn(c); resolve(true); });
+          c.on('error', () => { clearTimeout(to); resolve(false); });
+        });
+        if (ok) { reconnecting = false; return; }
+      } catch (_) { /* try again */ }
+      await sleep(2500);
+    }
+    reconnecting = false;
+    if (!connected && !teardown) {
+      status('Could not reconnect. Refresh the page to rejoin the same room.');
+      emit('giveup');
+    }
+  }
+
+  function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
   // Surface ICE failures (helps diagnose NAT issues).
   function monitorIce(c) {

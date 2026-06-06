@@ -259,6 +259,39 @@ button.ghost.small { padding: 4px 10px; font-size: 12px; }
 .hidden { display: none !important; }
 
 /* ============================================================
+   Connection status pill (in-game)
+   ============================================================ */
+.conn-pill {
+  position: fixed;
+  top: 10px;
+  right: 12px;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  padding: 5px 11px;
+  border-radius: 20px;
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid transparent;
+  color: var(--text-dim);
+  backdrop-filter: blur(6px);
+  transition: color .25s, border-color .25s, opacity .3s;
+  user-select: none;
+}
+.conn-pill .dot { font-size: 9px; line-height: 1; }
+.conn-pill.ok   { color: var(--success); border-color: rgba(74,179,106,0.45); }
+.conn-pill.warn { color: var(--accent);  border-color: rgba(224,179,74,0.55); }
+.conn-pill.bad  { color: #ff8a8a;         border-color: rgba(210,67,67,0.6); }
+.conn-pill.warn .dot { animation: pulse-dot 1s ease-in-out infinite; }
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.25; }
+}
+
+/* ============================================================
    Game screen
    ============================================================ */
 
