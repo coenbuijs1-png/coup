@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>Coup</title>
-  <link rel="stylesheet" href="styles.css?v=5" />
+  <link rel="stylesheet" href="styles.css?v=6" />
 </head>
 <body>
 
@@ -13,7 +13,7 @@
     <div class="lobby-card">
       <h1 class="title">COUP</h1>
       <p class="subtitle">A game of deception</p>
-      <p class="build-version" id="build-version">Build v5 / checking network...</p>
+      <p class="build-version" id="build-version">Build v6 / checking network...</p>
 
       <div class="lobby-form">
         <label class="field">
@@ -115,18 +115,18 @@
     </div>
   </div>
 
-  <!-- Networking: Trystero (loaded dynamically inside net.js) -->
-  <script src="js/cards.js?v=5"></script>
-  <script src="js/game.js?v=5"></script>
-  <script src="js/net.js?v=5"></script>
-  <script src="js/ui.js?v=5"></script>
-  <script src="js/main.js?v=5"></script>
+  <!-- Networking: PeerJS (loaded dynamically inside net.js) -->
+  <script src="js/cards.js?v=6"></script>
+  <script src="js/game.js?v=6"></script>
+  <script src="js/net.js?v=6"></script>
+  <script src="js/ui.js?v=6"></script>
+  <script src="js/main.js?v=6"></script>
   <script>
     document.addEventListener('DOMContentLoaded', () => {
       const el = document.getElementById('build-version');
       if (!el) return;
-      const netVersion = typeof Net !== 'undefined' && Net.version ? Net.version : 'network unknown';
-      el.textContent = 'Build v5 / ' + netVersion;
+      const netVersion = (typeof Net !== 'undefined' && (Net.VERSION || Net.version)) ? (Net.VERSION || Net.version) : 'network unknown';
+      el.textContent = 'Build v6 / ' + netVersion;
     });
   </script>
 </body>

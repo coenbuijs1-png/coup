@@ -42,8 +42,8 @@ const App = {
     App.myName = name || 'Host';
     App.myIdx = 0;
     try {
-      const id = await Net.init();
-      Net.hostRoom();
+      await Net.init();
+      const id = await Net.hostRoom();
       UI.showRoomCode(id);
     } catch (e) {
       UI.toast('Failed to create room: ' + (e.message || e), 'danger');
