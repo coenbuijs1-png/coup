@@ -1,0 +1,12 @@
+# Dev tooling / scratch — never deploy these
+*.py
+video_frames/
+debug-corners.png
+cards-source.png.webp
+# Original full-res source card scans (kept locally, not needed on site)
+*card*.png
+*Card*.png
+# Editor / OS
+.DS_Store
+Thumbs.db
+.claude/
